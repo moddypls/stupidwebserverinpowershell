@@ -1,54 +1,65 @@
 function start-server
 {
-    [CmdletBinding()]
-    param (
-        [string]$drive_path = $PWD.Path,
-        [string]$protocol = "http",
-        [string]$host_name = "localhost",
-        [int]$port = 7777
-    )
+  [CmdletBinding()]
+  param (
+    [Alias("root", "r", "directory", "d")]
+    [string]$root_directory = $PWD.Path,
 
-    $prefix = "$protocol" + "://" + $host_name + ":$port/"
-    Write-Host "Server starting ..."
+    [Alias("s")]
+    [string]$scheme = "http",
 
-    $PWD.Path
+    [Alias("hn", "host", "h", "ip", "address", "a")]
+    [string]$host_name = "localhost",
 
-    $listener = New-Object System.Net.HttpListener
-    $listener.Prefixes.Add($prefix)
-    $listener.Start()
+    [Alias("p")]
+    [int]$port = 7777
+  )
 
-    Write-Host "Listening to $prefix ..."
+  $prefix = "$scheme" + "://" + $host_name + ":$port/"
+  Write-Host "Server starting..."
 
-    #Start-Process $prefix
+  $listener = New-Object System.Net.HttpListener
+  $listener.Prefixes.Add($prefix)
+  $listener.Start()
 
-    $drive = New-PSDrive -Name "hosted-drive" -PSProvider FileSystem -Root (Resolve-Path -Path $drive_path)
+  $resolved_directory = Resolve-Path -Path $root_directory
 
-    while($true)
-    {
-        try {
-            $context = $listener.GetContext()
-            $context.Request.Url
-            $URL = $context.Request.Url.LocalPath.TrimStart('/')
-            $file_path = Join-Path -Path "hosted-drive" -ChildPath $URL
-            if(Test-Path $file_path) 
-            {
-                $content = Get-Content -Encoding Byte -Path $file_path
-                $context.Response.OutputStream.Write($content, 0, $content.Length)
-            } else {
-                $context.Response.StatusCode = 404
-                $error_msg = "File not found"
-                $error_bytes = [System.Text.Encoding]::UTF8.GetBytes($error_msg)
-                $context.Response.OutputStream.Write($error_bytes, 0, $error_bytes.Length)
-            }
-            
-            $context.Response.Close()
-        }
-        catch
+  Write-Host "Listening to $prefix with $resolved_directory..."
+
+  #Start-Process $prefix
+
+  $drive = New-PSDrive -Name hosted-drive -PSProvider FileSystem -Root $resolved_directory
+
+  while($true)
+  {
+    try {
+      $context = $listener.GetContext()
+      $context.Request
+      $URL = $context.Request.Url.LocalPath.TrimStart('/')
+      Write-Host "URL: $URL"
+      $file_path = Join-Path -Path hosted-drive -ChildPath $URL
+      if(Test-Path $resolved_directory) 
+      {
+        if ($URL -ne "favicon.ico")
         {
-            Write-Error $Error
-            break
+          $content = Get-Content -Encoding Byte -Path "hosted-drive:$URL"
+          $context.Response.OutputStream.Write($content, 0, $content.Length)
         }
+      } else {
+        $context.Response.StatusCode = 404
+        $error_msg = "File not found"
+        $error_bytes = [System.Text.Encoding]::UTF8.GetBytes($error_msg)
+        $context.Response.OutputStream.Write($error_bytes, 0, $error_bytes.Length)
+      }
+      
+      $context.Response.Close()
     }
+    catch
+    {
+      Write-Error $Error
+      break
+    }
+  }
 }
 
 Export-ModuleMember -Function start-server
